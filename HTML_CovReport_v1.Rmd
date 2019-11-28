@@ -1,0 +1,144 @@
+#!/usr/bin/env Rscript
+---
+title: "HTML_ClinSeq_report"
+author: "Eric Allain"
+date: "August 2, 2019"
+output: html_document
+fig_width: 8
+fig_height: 8
+fig_align: "center"
+---
+
+
+```{r arguments, echo = FALSE}
+
+args = commandArgs(trailingOnly = TRUE)
+
+```
+
+#Sequencing Summary 
+
+```{r samplename, echo=FALSE}
+print(paste("Sequencing for sample: ",toString(args[4])))
+```
+
+
+```{r dependencies, echo=TRUE, message=FALSE, warning=FALSE}
+if(!require(ggplot2)){install.packages("ggplot2")}
+if(!require(reshape2)){install.packages("reshape2")}
+if(!require(plotly)){install.packages("plotly")}
+if(!require(knitr)){install.packages("knitr")}
+
+library(plotly)
+library(ggplot2)
+library(reshape2)
+library(knitr)
+
+```
+
+## R Markdown
+
+Complete gene-by-gene summary of sequencing coverage is available in the GATK output file, however only the target genes are shown in the plots below. 
+Make sure data is tab-delimited and that the target genes file has no header. 
+
+```{r load}
+
+dat1<- read.table(toString(args[2]), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+Target<- read.table(toString(args[3]), header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+Some pre-processing is required for graphical output. 
+
+```{r pre-process}
+dat1<- dat1[dat1$Gene %in% Target$V1,]
+graph_data<-cbind(dat1[,3], dat1[,length(dat1[1,])])
+rownames(graph_data)<-dat1$Gene
+colnames(graph_data)<-c("Average_coverage", "Per_Coverage_above_10X")
+class(graph_data)<-"numeric"
+graph_data<-as.data.frame(graph_data)
+class(graph_data$Per_Coverage_above_10X)
+graph_data$Gene<-rownames(graph_data)
+
+graph_data$Warning <-ifelse(graph_data$Per_Coverage_above_10X < 90,"Warning","Good")
+graph_data$Warning <- as.factor(graph_data$Warning)
+```
+
+## Plots and statistics
+
+```{r stats, echo=FALSE}
+NbGene<-round(length(dat1[,length(dat1[1,])][dat1[,length(dat1[1,])]>90])/length(dat1[,length(dat1[1,])]),2)
+print(paste(toString(NbGene)," of target genes have 90% of bases covered at a minimum of 10X"))
+print(paste(median(dat1[,3])," is the median coverage for target genes"))
+```
+
+
+```{r style_params, echo = FALSE}
+f1 <- list(
+  family = "Arial, sans-serif",
+  size = 18,
+  color = "grey50"
+)
+style1 <- list(
+  title = "Average Coverage",
+  titlefont = f1,
+  autotick = FALSE,
+  ticks = "outside",
+  tick0 = 0,
+  dtick = 50,
+  ticklen = 4,
+  tickwidth = 2,
+  tickcolor = toRGB("black"),
+  range = c(0,500))
+
+style2 <- list(
+  title = "Frequency",
+  titlefont = f1,
+  autotick = FALSE,
+  ticks = "outside",
+  tick0 = 0,
+  dtick = 10,
+  ticklen = 4,
+  tickwidth = 2,
+  tickcolor = toRGB("black"),
+  gridcolor = toRGB("gray"))
+
+style3<- list(
+  title = "% Bases Covered At 10X",
+  titlefont = f1,
+  autotick = FALSE,
+  ticks = "outside",
+  tick0 = 0,
+  dtick = 10,
+  ticklen = 4,
+  tickwidth = 2,
+  tickcolor = toRGB("black"),
+  range = c(0,102))
+```
+
+Histogram showing the average coverage per gene.
+
+```{r graph1, echo = FALSE, fig.align="center", fig.height= 8, fig.width= 8}
+p <- plot_ly(graph_data, x = ~Average_coverage, type = "histogram", text = "Bin limits / # Genes in bin") %>%
+  layout(xaxis = style1, yaxis = style2)
+p
+```
+
+Histogram of % bases covered by gene.
+
+```{r graph2, echo = FALSE, fig.align="center", fig.height= 8, fig.width= 8}
+p1<- plot_ly(graph_data, x = ~Per_Coverage_above_10X, type = "histogram", text = "Bin limits / # Genes in bin") %>%
+  layout(xaxis = style3, yaxis = style2)
+p1
+```
+
+Scatterplot with warning flag and hover text showing which genes have less coverage. 
+
+```{r graph3, echo = FALSE, fig.align="center", fig.height= 8, fig.width= 8}
+p2 <- plot_ly(graph_data, x = ~Average_coverage, y = ~Per_Coverage_above_10X, color = ~Warning, type = "scatter", text = ~Gene) %>%
+  layout(xaxis = style1, yaxis = style3)
+p2
+```
+
+
+
+
