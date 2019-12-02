@@ -20,3 +20,7 @@ run GATK. for ACRI users GATK is installed in /home/iarc/bin/GATK/gatk-3/GenomeA
 
 A file with the suffix sample_gene_summary will be created. This is our main input for Rmarkdown. 
 Furthermore, an HTML and PDF report will be generated with scatterplots and histograms describing overall coverage information and statistics. 
+
+######
+
+The WES files will run a more detailed report with additionnal exon-level plots for exome runs. Genes of interest should be included in the GeneList file. Otherwise, include all known protein-coding genes. 
