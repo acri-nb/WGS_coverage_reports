@@ -1,0 +1,243 @@
+#!/usr/bin/env Rscript
+---
+title: "HTML_ClinSeq_report"
+author: "Eric Allain"
+date: "August 2, 2019"
+output: html_document
+fig_width: 8
+fig_height: 8
+fig_align: "center"
+---
+
+
+```{r arguments, echo = FALSE}
+
+args = commandArgs(trailingOnly = TRUE)
+
+```
+
+#Sequencing Summary 
+
+```{r samplename, echo=FALSE}
+print(paste("Sequencing for sample: ",toString(args[7])))
+```
+
+
+```{r dependencies, echo=TRUE, message=FALSE, warning=FALSE}
+if(!require(ggplot2)){install.packages("ggplot2")}
+if(!require(reshape2)){install.packages("reshape2")}
+if(!require(plotly)){install.packages("plotly")}
+if(!require(knitr)){install.packages("knitr")}
+
+library(plotly)
+library(ggplot2)
+library(reshape2)
+library(knitr)
+
+```
+
+## R Markdown
+
+Complete gene-by-gene summary of sequencing coverage is available in the GATK output file, however only the target genes are shown in the plots below. 
+Make sure data is tab-delimited and that the target genes file has no header. 
+
+```{r load}
+
+dat1<- read.table(toString(args[2]), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+Target<- read.table(toString(args[3]), header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+Some pre-processing is required for graphical output. 
+
+```{r pre-process}
+dat1<- dat1[dat1$Gene %in% Target$V1,]
+graph_data<-cbind(dat1[,3], dat1[,length(dat1[1,])])
+rownames(graph_data)<-dat1$Gene
+colnames(graph_data)<-c("Average_coverage", "Per_Coverage_above_10X")
+class(graph_data)<-"numeric"
+graph_data<-as.data.frame(graph_data)
+class(graph_data$Per_Coverage_above_10X)
+graph_data$Gene<-rownames(graph_data)
+
+graph_data$Warning <-ifelse(graph_data$Per_Coverage_above_10X < 90,"Warning","Good")
+graph_data$Warning <- as.factor(graph_data$Warning)
+```
+
+## Plots and statistics
+
+```{r stats, echo=FALSE}
+NbGene<-round(length(dat1[,length(dat1[1,])][dat1[,length(dat1[1,])]>90])/length(dat1[,length(dat1[1,])]),2)
+print(paste(toString(NbGene)," of target genes have 90% of bases covered at a minimum of 10X"))
+print(paste(median(dat1[,3])," is the median coverage for target genes"))
+```
+
+
+```{r style_params, echo = FALSE}
+f1 <- list(
+  family = "Arial, sans-serif",
+  size = 18,
+  color = "grey50"
+)
+style1 <- list(
+  title = "Average Coverage",
+  titlefont = f1,
+  autotick = FALSE,
+  ticks = "outside",
+  tick0 = 0,
+  dtick = 50,
+  ticklen = 4,
+  tickwidth = 2,
+  tickcolor = toRGB("black"),
+  range = c(0,500))
+
+style2 <- list(
+  title = "Frequency",
+  titlefont = f1,
+  autotick = FALSE,
+  ticks = "outside",
+  tick0 = 0,
+  dtick = 10,
+  ticklen = 4,
+  tickwidth = 2,
+  tickcolor = toRGB("black"),
+  gridcolor = toRGB("gray"))
+
+style3<- list(
+  title = "% Bases Covered At 10X",
+  titlefont = f1,
+  autotick = FALSE,
+  ticks = "outside",
+  tick0 = 0,
+  dtick = 10,
+  ticklen = 4,
+  tickwidth = 2,
+  tickcolor = toRGB("black"),
+  range = c(0,102))
+```
+
+Histogram showing the average coverage per gene.
+
+```{r graph1, echo = FALSE, fig.align="center", fig.height= 8, fig.width= 8}
+p <- plot_ly(graph_data, x = ~Average_coverage, type = "histogram", text = "Bin limits / # Genes in bin") %>%
+  layout(xaxis = style1, yaxis = style2)
+p
+```
+
+Histogram of % bases covered by gene.
+
+```{r graph2, echo = FALSE, fig.align="center", fig.height= 8, fig.width= 8}
+p1<- plot_ly(graph_data, x = ~Per_Coverage_above_10X, type = "histogram", text = "Bin limits / # Genes in bin") %>%
+  layout(xaxis = style3, yaxis = style2)
+p1
+```
+
+Scatterplot with warning flag and hover text showing which genes have less coverage. 
+
+```{r graph3, echo = FALSE, fig.align="center", fig.height= 8, fig.width= 8}
+p2 <- plot_ly(graph_data, x = ~Average_coverage, y = ~Per_Coverage_above_10X, color = ~Warning, type = "scatter", text = ~Gene) %>%
+  layout(xaxis = style1, yaxis = style3)
+p2
+```
+
+## Gene Interval Summary visualization
+Some tinkering to get the data into the right format
+
+```{r build_frame, echo = FALSE, include = FALSE}
+
+#Dependencies
+
+if(!require(GenomicRanges)){BiocManager::install("GenomicRanges")}
+if(!require(devtools)){install.packages("devtools")}
+library("devtools")
+if(!require(systemsbio)){devtools::install_github("frankRuehle/systemsbio", build_vignettes=TRUE)}
+if(!require(dplyr)){install.packages("dplyr")}
+
+
+library('GenomicRanges')
+library("systemsbio")
+library("dplyr")
+Targets<-Target
+
+BEDfile<-read.table(toString(args[4]), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+REFSEQfile<-read.table(toString(args[5]), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+res<-read.table(toString(args[6]), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+
+REFSEQfile<-REFSEQfile[REFSEQfile$V13 %in% Targets$V1,]
+BEDfile<-BEDfile[BEDfile$V4 %in% REFSEQfile$V2,]
+
+res1<-transform(res, Target = colsplit(Target, pattern = ":", names = c('chr', 'coords')))
+plcholder<-names(res)[length(res)]
+res1<-as.data.frame(cbind(res1$Target$chr,res1$Target$coords,res1[[plcholder]]),stringsAsFactors = FALSE)
+names(res1)<-c("chr","coords","score")
+res1<-transform(res1, coords = colsplit(coords, pattern = "-", names = c('start', 'end')))
+res1<-as.data.frame(cbind(res1$chr,res1$coords$start,res1$coords$end,res1$score),stringsAsFactors = FALSE)
+names(res1)<-c("chr","start","end","score")
+res1$start<-as.numeric(res1$start)
+res1$end<-as.numeric(res1$end)
+res1<-res1[!(is.na(res1$end)),]
+
+
+
+GetNames<- function(bed,refseq){
+  GNames<-vector()
+  for(i in bed[,4]){
+      indexIWant <- which(refseq[,2] == i)
+      GNames<-c(GNames,refseq[indexIWant,13])
+  }
+  return(GNames)
+}
+BEDfile$name<-(GetNames(BEDfile,REFSEQfile))
+names(BEDfile)<-c("chr","start","end","ID","name")
+
+BEDr <- 
+  lapply(split(BEDfile, BEDfile$ID), function(i){
+    GRanges(seqnames = i$chr,
+            ranges = IRanges(start = i$start,
+                             end = i$end),
+            names = i$name)
+  })
+BEDr<-GRangesList(BEDr)
+BEDr1<-unlist(BEDr)
+resr <- makeGRangesFromDataFrame(res1, keep.extra.columns = TRUE)
+Full_ranges<-subsetByOverlaps.keepAllMeta(BEDr1,resr)
+Full_ranges<-sortSeqlevels(Full_ranges)
+Full_ranges<-sort(Full_ranges)
+Full_unique<-unique(Full_ranges)
+
+Graphing_frame<-data.frame(seqnames=seqnames(Full_unique),
+                                 starts=start(Full_unique)-1,
+                                 ends=end(Full_unique),
+                                 names=Full_unique$names,
+                                 scores=score(Full_unique),
+                                 strands=strand(Full_unique),
+                                 stringsAsFactors = FALSE)
+
+Graphing_frame_list <- split(Graphing_frame , f = Graphing_frame$names )
+
+
+```
+
+Plot all intervals for each gene in the Target Gene list. You can zoom on specific locations within each plot for ease of viewing. 
+Hovering over intervals with your mouse will display coordinate information and warning status. 
+
+```{r exon_table}
+
+New_Graph_Frame<-bind_rows(Graphing_frame_list[1:25])
+New_Graph_Frame$scores<-as.numeric(New_Graph_Frame$scores)
+Col_var<-ifelse(New_Graph_Frame$scores > 90, "Good","Warning")
+New_Graph_Frame$Status<-Col_var
+labcolors<-c("#339999","#CC0000")
+New_Graph_Frame$Status<-as.factor(New_Graph_Frame$Status)
+  
+gg<-ggplot(data = New_Graph_Frame,aes(x = starts,xend = ends,y = 0,yend=0))+ geom_segment(size = 2.5,aes(color = Status, text = sprintf('Contig: %s<br>Interval: %s - %s',seqnames,starts,ends))) + xlab("Coordinates (hg19)") + ylab("")+scale_color_manual(values = labcolors)+facet_wrap(~names,scales="free",ncol =1)+theme_bw()+theme(axis.text=element_blank(),axis.ticks=element_blank(),strip.background = element_blank())
+
+m<-ggplotly(gg, height = 30*length(Graphing_frame_list))
+m
+```
+
+
+#
+
+
+
+
